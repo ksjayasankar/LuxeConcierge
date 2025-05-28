@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+llrs/
+venv/
+env/
+.venv/
+.llrs/
+
+# Databases
+*.db
+*.sqlite3
+
+# Environment variables
+.env
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE specific files
+.idea/
+.vscode/
+
+# db-ally indexes
+similarity_indexes/

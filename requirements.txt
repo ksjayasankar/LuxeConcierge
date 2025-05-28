@@ -1,0 +1,22 @@
+# Flask Core
+Flask
+Flask-SQLAlchemy
+python-dotenv
+
+# Database
+SQLAlchemy # Already pulled by Flask-SQLAlchemy, but good to list explicitly
+
+# LLM Interaction
+openai # Use the newer OpenAI client library structure
+litellm     # For db-ally LLM/Embedding interface
+
+# db-ally
+dbally[litellm, faiss-cpu] # Includes base, litellm adapter, and FAISS CPU support
+# Use dbally[litellm, faiss-gpu] if you have GPU support configured
+
+# Optional for older Python versions needing Annotated
+# typing-extensions
+
+# Other utilities (add as needed)
+numpy
+pandas

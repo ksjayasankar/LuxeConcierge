@@ -1,0 +1,1 @@
+{"run_id": "P2-Task1-FullSystem-20250405_142419-8037", "persona_id": "P2", "task_id": "Task1", "llm_simulator": "gpt-4o", "ablation_condition": "FullSystem", "turn_number": 0, "event_type": "MANUAL_SIMULATION_START", "timestamp": "2025-04-05T08:54:19.946051Z"}
