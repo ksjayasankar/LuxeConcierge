@@ -55,6 +55,8 @@ Consider additional quality factors:
 - **Craftsmanship Score:** Higher scores are generally better.
 - **Suitability:** How well does the product fit the overall context and specific needs?
 - **Relevance:** Prioritize direct relevance to the user's request above all else.
+- **Keyword Matching:**
+  Give special consideration to products that precisely match specific keywords from the user's query (e.g., an exact color, a material like 'full-grain', or a feature like 'detachable strap'). Such a match is a strong indicator of relevance.
 
 **Rating Scale:**
 Assign an integer score from -2 to +2 to EACH product ID based on the criteria:
