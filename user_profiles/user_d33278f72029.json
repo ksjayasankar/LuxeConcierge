@@ -1,0 +1,81 @@
+{
+  "user_id": "user_d33278f72029",
+  "created_at": "2025-06-27T00:04:50.040732",
+  "last_updated": "2025-06-27T00:05:49.237925",
+  "interaction_count": 2,
+  "preferences": {
+    "styles": {
+      "briefcase": 2
+    },
+    "colors": {
+      "black": 1
+    },
+    "price_range": {
+      "min": 580.0,
+      "max": 720.0,
+      "avg": 636.6666666666666,
+      "all_prices": [
+        720.0,
+        580.0,
+        610.0
+      ]
+    },
+    "materials": {
+      "real_leather": 2
+    },
+    "occasions": {},
+    "quality_scores": {
+      "avg_craftsmanship": 9.533333333333333,
+      "avg_sustainability": 7.966666666666666,
+      "all_craftsmanship": [
+        9.7,
+        9.4,
+        9.5
+      ],
+      "all_sustainability": [
+        8.1,
+        7.8,
+        8.0
+      ]
+    }
+  },
+  "interaction_history": [
+    {
+      "timestamp": "2025-06-27T00:04:50.040866",
+      "query": "Could you recommend your best full-grain leather briefcases, focusing specifically on construction quality, durability, and classic styling? Please include details on the hardware and leather finishing as well.",
+      "extracted_criteria": {
+        "style": "briefcase",
+        "material_preference": "real_leather",
+        "min_craftsmanship": 9.0,
+        "min_sustainability": 7.0
+      },
+      "recommended_products": [
+        "Centurion Full-Grain Briefcase",
+        "Sovereign Diplomat Full-Grain Briefcase",
+        "Citadel Full-Grain Briefcase"
+      ],
+      "assistant_response": "I found these 3 options you might like: 'Centurion Full-Grain Briefcase', 'Sovereign Diplomat Full-Grain Briefcase', and 'Citadel Full-Grain Briefcase'. Do any of these catch your eye?"
+    },
+    {
+      "timestamp": "2025-06-27T00:05:49.237878",
+      "query": "Do you have black ones?",
+      "extracted_criteria": {
+        "style": "briefcase",
+        "color": "black",
+        "material_preference": "real_leather",
+        "min_craftsmanship": 9.5,
+        "min_sustainability": 8.0
+      },
+      "recommended_products": [],
+      "assistant_response": "Hmm, I searched based on 'Black full-grain leather briefcases with excellent construction quality, durability, and classic styling, focusing on hardware details and leather finishing' but couldn't fin..."
+    }
+  ],
+  "learned_insights": {
+    "brand_affinity": "professional/business-oriented",
+    "sustainability_importance": "high",
+    "quality_vs_price": "premium-quality-focused",
+    "preferred_features": [
+      "real_leather"
+    ]
+  }
+}

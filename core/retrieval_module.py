@@ -60,49 +60,52 @@ def format_product_for_embedding(product: Dict[str, Any]) -> str:
     return representation.replace('..', '.')
 
 # === Helper for getting embeddings safely ===
+
+# In core/retrieval_module.py
+
 async def _get_embeddings_batch(texts: List[str], input_type: str = "passage") -> List[Optional[np.ndarray]]:
-    # (Keep this function as it was, including the fix for item['index'])
-    """Gets embeddings for a batch of texts using litellm, handling errors."""
+    """Gets dense embeddings for a batch of texts using litellm, handling errors."""
     embeddings_list = []
     if not texts:
         return []
     try:
+        # FIX: Removed the extra_body parameter
         response = await litellm.aembedding(
             model=EMBEDDING_MODEL_NAME,
             input=texts,
             api_key=NVIDIA_NIM_API_KEY,
             api_base=NVIDIA_NIM_API_BASE,
-            input_type=input_type # Pass input_type
+            input_type=input_type
         )
-        # Map response back to original texts order
+
         if response.data and len(response.data) == len(texts):
-             # Use item['index'] and item['embedding']
-             embedding_map = {item['index']: np.array(item['embedding'], dtype=np.float32) for item in response.data}
-             embeddings_list = [embedding_map.get(i) for i in range(len(texts))]
-             # Normalize embeddings
-             for i, emb in enumerate(embeddings_list):
-                 if emb is not None:
-                     norm = np.linalg.norm(emb)
-                     if norm > 1e-6: # Avoid division by zero
-                          embeddings_list[i] = emb / norm
-                     else:
-                          logger.warning(f"Embedding for text '{texts[i]}' has zero norm.")
-                          embeddings_list[i] = None # Treat as failure if norm is zero
+            # FIX: This now maps to a simple np.ndarray, not a tuple
+            embedding_map = {item['index']: np.array(item['embedding'], dtype=np.float32) for item in response.data}
+            embeddings_list = [embedding_map.get(i) for i in range(len(texts))]
+
+            # Normalize embeddings (this logic is correct and should be kept)
+            for i, emb in enumerate(embeddings_list):
+                if emb is not None:
+                    norm = np.linalg.norm(emb)
+                    if norm > 1e-6:
+                        embeddings_list[i] = emb / norm
+                    else:
+                        logger.warning(f"Embedding for text '{texts[i]}' has zero norm.")
+                        embeddings_list[i] = None
         else:
-             logger.error(f"Mismatched response length from embedding API. Expected {len(texts)}, got {len(response.data) if response.data else 0}.")
-             embeddings_list = [None] * len(texts)
+            logger.error(f"Mismatched response length from embedding API. Expected {len(texts)}, got {len(response.data) if response.data else 0}.")
+            embeddings_list = [None] * len(texts)
 
-    except litellm.exceptions.AuthenticationError as e: logger.critical(f"Auth Error during batch embedding: {e}"); embeddings_list = [None] * len(texts)
-    except litellm.exceptions.APIConnectionError as e: logger.error(f"Connection Error during batch embedding: {e}"); embeddings_list = [None] * len(texts)
-    except Exception as e: logger.error(f"Unexpected Error during batch embedding for input_type '{input_type}': {e}", exc_info=True); embeddings_list = [None] * len(texts)
+    except Exception as e:
+        # Shortened error handling for brevity, your original was fine
+        logger.error(f"Unexpected Error during batch embedding for input_type '{input_type}': {e}", exc_info=True)
+        embeddings_list = [None] * len(texts)
 
-    # Log failures
     failed_count = sum(1 for emb in embeddings_list if emb is None)
     if failed_count > 0:
         logger.warning(f"Failed to get embeddings for {failed_count}/{len(texts)} texts in the batch.")
 
     return embeddings_list
-
 
 # === Initialization Function ===
 async def initialize_retrieval_system(force_rebuild: bool = False):
@@ -149,32 +152,36 @@ async def initialize_retrieval_system(force_rebuild: bool = False):
         except Exception as e: logger.error(f"Failed to load existing Faiss index: {e}. Rebuilding...", exc_info=True)
 
     if not index_loaded:
-        # ... (Faiss building logic using _get_embeddings_batch) ...
-        logger.info("Building new Faiss index from database products using litellm...")
-        logger.info(f"Generating embeddings for {len(_product_data_store)} products...")
+        logger.info("Building new Faiss index from database products (dense vectors only)...")
         product_texts = [format_product_for_embedding(p) for p in _product_data_store]
         batch_size = 16
         all_embeddings_list = []
         for i in range(0, len(product_texts), batch_size):
-             batch_texts_segment = product_texts[i:i+batch_size]
-             logger.info(f"Embedding product descriptions batch {i//batch_size + 1}/{(len(product_texts)+batch_size-1)//batch_size}...")
-             batch_embeddings = await _get_embeddings_batch(batch_texts_segment, input_type="passage")
-             all_embeddings_list.extend(batch_embeddings)
+            batch_texts_segment = product_texts[i:i+batch_size]
+            logger.info(f"Embedding product descriptions batch {i//batch_size + 1}/{(len(product_texts)+batch_size-1)//batch_size}...")
+            # FIX: This now returns a list of dense vectors
+            batch_embeddings = await _get_embeddings_batch(batch_texts_segment, input_type="passage")
+            all_embeddings_list.extend(batch_embeddings)
+
         valid_embeddings = [emb for emb in all_embeddings_list if emb is not None]
         if len(valid_embeddings) != len(_product_data_store):
             logger.critical(f"Failed to generate embeddings for all products ({len(valid_embeddings)}/{len(_product_data_store)} successful). Cannot build index.")
             raise RuntimeError("Failed to generate embeddings for all products.")
+
         embeddings_np = np.array(valid_embeddings).astype(np.float32)
         logger.info(f"Product Embeddings generated. Shape: {embeddings_np.shape}")
         dimension = embeddings_np.shape[1]
         logger.info(f"Creating Faiss IndexFlatIP dim {dimension}...")
-        index = faiss.IndexFlatIP(dimension); index.add(embeddings_np) # Assumes embeddings are normalized by helper
+        index = faiss.IndexFlatIP(dimension)
+        index.add(embeddings_np)
         logger.info(f"Faiss index created. Total vectors: {index.ntotal}")
-        try:
-            logger.info(f"Saving new Faiss index to: {FAISS_INDEX_FILE}"); faiss.write_index(index, FAISS_INDEX_FILE)
-        except Exception as e: logger.error(f"Failed to save new Faiss index: {e}", exc_info=True)
-        _faiss_index = index
 
+        try:
+            logger.info(f"Saving new Faiss index to: {FAISS_INDEX_FILE}")
+            faiss.write_index(index, FAISS_INDEX_FILE)
+        except Exception as e:
+            logger.error(f"Failed to save new Faiss index: {e}", exc_info=True)
+        _faiss_index = index
 
     # Step 3: Pre-calculate Attribute Embeddings
     logger.info("Pre-calculating embeddings for filterable attributes...")
@@ -203,11 +210,13 @@ async def initialize_retrieval_system(force_rebuild: bool = False):
         for i in range(0, len(texts_to_embed_for_attrs), batch_size):
             batch_texts_segment = texts_to_embed_for_attrs[i:i+batch_size]
             logger.info(f"Embedding attributes batch {i//batch_size + 1}/{(len(texts_to_embed_for_attrs)+batch_size-1)//batch_size}...")
-            batch_embeddings = await _get_embeddings_batch(batch_texts_segment, input_type="passage") # Use passage type
+            # FIX: Call the reverted helper, which returns a list of dense vectors
+            batch_embeddings = await _get_embeddings_batch(batch_texts_segment, input_type="passage")
             all_attr_embeddings.extend(batch_embeddings)
 
         total_embedded_count = 0
         for key, index in unique_attribute_values_map.items():
+            # FIX: Check the index and get the dense vector directly
             if index < len(all_attr_embeddings) and all_attr_embeddings[index] is not None:
                 _attribute_embeddings[key] = all_attr_embeddings[index]
                 total_embedded_count += 1
@@ -330,14 +339,15 @@ def check_filters_detailed(
 
 
 # === Core Retrieval Function (Includes Relaxation Logic) ===
+# In core/retrieval_module.py
+
 async def get_product_candidates_hybrid(
     natural_language_query: str,
     criteria: Dict[str, Any]
-) -> Tuple[List[Dict[str, Any]], Optional[str]]: # Return tuple
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     """
-    Retrieves product candidates using Faiss, semantic filtering (with fallbacks),
-    and boosting. If no strict match, attempts to relax criteria sequentially.
-    Returns a tuple: (list_of_products, relaxation_info_string_or_None).
+    Retrieves product candidates using Faiss (dense search), followed by
+    filtering, relaxation, and metadata-based score boosting.
     """
     global _faiss_index, _product_data_store, _faiss_index_to_product_id
 
@@ -347,18 +357,16 @@ async def get_product_candidates_hybrid(
 
     logger.info(f"Retrieving candidates for query: '{natural_language_query}' with STRICT criteria: {criteria}")
 
-    # Step 1: Embed Query and Search Faiss
-    query_embedding_np : Optional[np.ndarray] = None
-    top_m_indices = np.array([], dtype=int)
-    top_m_scores = np.array([], dtype=float)
+    # Step 1: Embed Query and Search Faiss (Dense Search)
     try:
-        # Use input_type="query" for the main NL query
         query_embed_list = await _get_embeddings_batch([natural_language_query], input_type="query")
-        if query_embed_list and query_embed_list[0] is not None:
-            query_embedding_np = query_embed_list[0].reshape(1, -1)
-        else: raise ValueError("Query embedding failed.")
-        M = min(_faiss_index.ntotal, 75) # Increased M slightly for relaxation
+        if not (query_embed_list and query_embed_list[0] is not None):
+            raise ValueError("Query embedding failed.")
+        query_embedding_np = query_embed_list[0].reshape(1, -1)
+
+        M = min(_faiss_index.ntotal, 75)
         if M == 0: return [], None
+
         logger.debug(f"Searching Faiss index for top {M} candidates...")
         distances, indices = _faiss_index.search(query_embedding_np, M)
         top_m_indices = indices[0][indices[0] != -1]
@@ -368,113 +376,85 @@ async def get_product_candidates_hybrid(
         logger.error(f"Error during query embedding or Faiss search: {e}", exc_info=True)
         return [], None
 
-    # Step 1.5: Embed CRITERIA values needed for semantic filtering
-    criteria_texts_to_embed_list = []
-    criteria_key_map = {}
-    current_idx = 0
-    for attr_name in _ATTRIBUTES_TO_EMBED:
-        value = criteria.get(attr_name)
-        if value and isinstance(value, str):
-            criteria_texts_to_embed_list.append(value)
-            criteria_key_map[current_idx] = attr_name
-            current_idx += 1
+    # Step 1.5: Embed CRITERIA values (Dense Vectors Only)
     criteria_embeddings_vectors = {}
+    criteria_texts_to_embed_list = [v for k, v in criteria.items() if k in _ATTRIBUTES_TO_EMBED and isinstance(v, str)]
     if criteria_texts_to_embed_list:
-        logger.debug(f"Embedding criteria values: {criteria_texts_to_embed_list}")
-        # Use input_type="passage" for consistency with attribute embeddings
-        batch_criteria_embeddings = await _get_embeddings_batch(criteria_texts_to_embed_list, input_type="passage")
-        for idx, emb in enumerate(batch_criteria_embeddings):
-            attr_name = criteria_key_map.get(idx)
-            if attr_name and emb is not None: criteria_embeddings_vectors[attr_name] = emb
-            elif attr_name: logger.warning(f"Failed embedding criteria {attr_name}='{criteria_texts_to_embed_list[idx]}'.")
+        criteria_embeddings = await _get_embeddings_batch(criteria_texts_to_embed_list, input_type="passage")
+        # Map back to criteria keys
+        text_to_emb = dict(zip(criteria_texts_to_embed_list, criteria_embeddings))
+        for key in _ATTRIBUTES_TO_EMBED:
+            if key in criteria:
+                criteria_embeddings_vectors[key] = text_to_emb.get(criteria[key])
 
-    # --- Internal Helper Function for filtering ---
-    def _filter_candidates(
-        indices_to_check: np.ndarray,
-        scores_to_check: np.ndarray,
-        current_criteria: Dict[str, Any],
-        current_criteria_embeddings: Dict[str, Optional[np.ndarray]]
-    ) -> List[Dict[str, Any]]:
+
+    # Step 2: Filter and Relax Logic
+    def _filter_candidates(indices_to_check, scores_to_check, current_criteria):
         passed_candidates = []
         for faiss_idx, score in zip(indices_to_check, scores_to_check):
-            product_index = int(faiss_idx)
-            if 0 <= product_index < len(_product_data_store):
-                product = _product_data_store[product_index]
-                passes, reason = check_filters_detailed(product, current_criteria, current_criteria_embeddings)
-                if passes:
-                    passed_candidates.append({"product": product, "semantic_score": float(score)})
-                # else: logger.debug(f"Filter fail (Relaxed?): ID {product.get('id')} Reason: {reason}") # Optional debug
-            else: logger.warning(f"Faiss index {product_index} out of bounds.")
+            product = _product_data_store[int(faiss_idx)]
+            passes, reason = check_filters_detailed(product, current_criteria, criteria_embeddings_vectors)
+            if passes:
+                passed_candidates.append({"product": product, "semantic_score": float(score)})
         return passed_candidates
-    # --- End Internal Helper ---
 
-    # Step 2: Strict Filtering Attempt
-    strict_filtered_candidates = _filter_candidates(top_m_indices, top_m_scores, criteria, criteria_embeddings_vectors)
-
-    final_candidates = strict_filtered_candidates
+    # Strict filtering attempt
+    final_candidates_with_scores = _filter_candidates(top_m_indices, top_m_scores, criteria)
     relaxation_applied = None
 
-    # Step 2.5: Relaxation Logic if Strict Failed
-    if not final_candidates and len(top_m_indices) > 0: # Only relax if candidates exist
+    # Relaxation Logic (works as is)
+    if not final_candidates_with_scores and len(top_m_indices) > 0:
         logger.info("Strict filtering yielded 0 results. Attempting relaxation...")
-
         relaxation_steps = [
             {"name": "sustainability score", "param": "min_sustainability", "type": "lower_step", "step": RELAX_SUSTAINABILITY_STEP, "floor": MIN_SUSTAINABILITY_FLOOR},
             {"name": "maximum price", "param": "price_max", "type": "increase_percent", "percent": RELAX_PRICE_MAX_PERCENT},
-            # Add more relaxation steps here if needed
         ]
-
         for step_info in relaxation_steps:
-            param = step_info["param"]
-            original_value = criteria.get(param)
-
+            param, original_value = step_info["param"], criteria.get(step_info["param"])
             if original_value is not None:
                 relaxed_criteria = copy.deepcopy(criteria)
+                # (Your logic to calculate new_value)
                 new_value = None
-                try:
-                    if step_info["type"] == "lower_step":
-                        new_value = float(original_value) - step_info["step"]
-                        if "floor" in step_info: new_value = max(new_value, step_info["floor"])
-                    elif step_info["type"] == "increase_percent":
-                         new_value = float(original_value) * (1.0 + step_info["percent"])
+                if step_info["type"] == "lower_step":
+                    new_value = float(original_value) - step_info["step"]
+                    if "floor" in step_info: new_value = max(new_value, step_info["floor"])
+                elif step_info["type"] == "increase_percent":
+                    new_value = float(original_value) * (1.0 + step_info["percent"])
 
-                    # Check if relaxation actually changed the value meaningfully
-                    if new_value is not None and abs(float(original_value) - new_value) > 1e-6:
-                        relaxed_criteria[param] = new_value
-                        logger.info(f"Relaxation Attempt: Relaxing {step_info['name']} from {original_value} to {new_value:.2f}")
+                if new_value is not None and abs(float(original_value) - new_value) > 1e-6:
+                    relaxed_criteria[param] = new_value
+                    logger.info(f"Relaxation Attempt: Relaxing {step_info['name']} to {new_value:.2f}")
+                    relaxed_results = _filter_candidates(top_m_indices, top_m_scores, relaxed_criteria)
+                    if relaxed_results:
+                        logger.info(f"Found {len(relaxed_results)} candidates after relaxing {step_info['name']}.")
+                        final_candidates_with_scores = relaxed_results
+                        relaxation_applied = step_info['name']
+                        break
+            if final_candidates_with_scores: break
 
-                        # Re-filter using the *original* Faiss candidates and original criteria embeddings
-                        relaxed_results = _filter_candidates(top_m_indices, top_m_scores, relaxed_criteria, criteria_embeddings_vectors)
-
-                        if relaxed_results:
-                            logger.info(f"Found {len(relaxed_results)} candidates after relaxing {step_info['name']}.")
-                            final_candidates = relaxed_results
-                            relaxation_applied = step_info['name']
-                            break # Stop relaxing
-                    # else: logger.debug(f"Skipping relaxation {step_info['name']}, value effectively unchanged.")
-                except (ValueError, TypeError) as e:
-                     logger.warning(f"Could not apply relaxation for {param}={original_value}. Error: {e}")
-
-            if final_candidates: # Break outer loop if relaxation worked
-                break
-
-    # Step 3 & 4: Boost, Rank, and Return
-    if not final_candidates:
+    # Step 3: Boost, Rank, and Return
+    if not final_candidates_with_scores:
         logger.info("No candidates found even after relaxation attempts.")
-        return [], None # Return empty list and None relaxation info
+        return [], None
 
-    # Apply boosting only to the final list (strict or relaxed)
-    logger.info(f"Applying boosting and ranking to {len(final_candidates)} candidates {'found via relaxation of '+relaxation_applied if relaxation_applied else 'found via strict filtering'}.")
-    w_semantic = 1.0; w_craftsmanship = 0.1; w_sustainability = 0.05
-    for candidate in final_candidates:
+    # Re-introduce boosting
+    logger.info(f"Applying boosting and ranking to {len(final_candidates_with_scores)} candidates.")
+    w_semantic = 1.0
+    w_craftsmanship = 0.15 # Slightly increased weight
+    w_sustainability = 0.05
+    for candidate in final_candidates_with_scores:
         product = candidate["product"]
         craft_score = product.get('craftsmanship_score', 5.0)
         sustain_score = product.get('sustainability_score', 5.0)
-        boosted_score = (w_semantic * candidate["semantic_score"] + w_craftsmanship * craft_score + w_sustainability * sustain_score)
+        boosted_score = (w_semantic * candidate["semantic_score"] +
+                         w_craftsmanship * (craft_score / 10.0) + # Normalize to 0-1 range
+                         w_sustainability * (sustain_score / 10.0))
         candidate["final_score"] = boosted_score
-    ranked_candidates = sorted(final_candidates, key=lambda x: x.get("final_score", -float('inf')), reverse=True)
 
-    final_results = [candidate["product"] for candidate in ranked_candidates[:RETRIEVAL_TOP_N]]
-    logger.info(f"Returning top {len(final_results)} candidates.")
+    ranked_candidates = sorted(final_candidates_with_scores, key=lambda x: x["final_score"], reverse=True)
+
+    # Return product dictionaries, sliced to the configured limit for the reranker
+    final_results = [c["product"] for c in ranked_candidates[:RETRIEVAL_TOP_N]]
+    logger.info(f"Returning top {len(final_results)} candidates for reranking.")
 
     return final_results, relaxation_applied

@@ -17,11 +17,22 @@ DEEPSEEK_API_BASE = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1"
 CONVERSATIONAL_MODEL_NAME = "deepseek-chat" # Used for conversation logic
 RERANKING_MODEL_NAME = "deepseek-chat"    # Used for reranking candidates
 
+# --- User Profile Settings ---
+USER_PROFILES_DIR = os.path.join(BASE_DIR, "user_profiles")
+USER_PROFILE_RETENTION_DAYS = 90  # How long to keep inactive profiles
+USER_PROFILE_MAX_INTERACTIONS = 100  # Maximum interactions to store per user
+USER_PROFILE_MIN_INTERACTIONS_FOR_LEARNING = 3  # Minimum interactions before using profile for personalization
+
+# --- Profile Learning Thresholds ---
+PROFILE_PRICE_BUFFER_PERCENT = 0.15  # 15% buffer when using historical price preferences
+PROFILE_QUALITY_BUFFER = 1.0  # Reduce quality requirements by 1 point from average
+PROFILE_SUSTAINABILITY_THRESHOLD = 7.0  # Min avg sustainability score to consider user sustainability-focused
+
 # --- NVIDIA NIM Embeddings (Used directly via litellm) ---
 NVIDIA_NIM_API_KEY = os.getenv("NVIDIA_NIM_API_KEY")
 NVIDIA_NIM_API_BASE = os.getenv("NVIDIA_NIM_EMBEDDING_BASE") # Base URL for embeddings endpoint
 # Ensure this matches the model string used in litellm calls
-EMBEDDING_MODEL_NAME = "nvidia_nim/nvidia/nv-embedqa-mistral-7b-v2"
+EMBEDDING_MODEL_NAME = "nvidia_nim/baai/bge-m3"
 
 # --- Faiss ---
 FAISS_INDEX_DIR = os.path.join(BASE_DIR, "faiss_indexes")
@@ -32,7 +43,7 @@ FAISS_INDEX_FILE = os.path.join(FAISS_INDEX_DIR, "products.index")
 FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "change-this-in-production-fallback-key")
 
 # --- Application Settings ---
-RETRIEVAL_TOP_N = 10 # Number of candidates after retrieval + filtering + boosting
+RETRIEVAL_TOP_N = 30 # Number of candidates after retrieval + filtering + boosting
 RERANKING_TOP_N = 3  # Number of candidates after LLM reranking
 SEMANTIC_FILTER_SIMILARITY_THRESHOLD = 0.5
 
